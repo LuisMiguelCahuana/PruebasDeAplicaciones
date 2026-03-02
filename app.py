@@ -68,14 +68,10 @@ def descargar_archivo_paralelo(session, codigo, periodo="0"):
     )
 
     try:
-        response = session.get(url, headers=headers)
+        response = session.get(url, headers=headers, timeout=30)
 
-        if response.headers.get("Content-Type") == \
-           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-
-            df = pd.read_excel(BytesIO(response.content))
-            df["PERIODO_DESCARGADO"] = periodo
-            return df
+        if response.status_code == 200 and response.content:
+            return (periodo, response.content)
 
     except Exception:
         return None
@@ -199,7 +195,7 @@ def run():
 
             session = st.session_state.session
             
-            with ThreadPoolExecutor(max_workers=10) as executor:
+            with ThreadPoolExecutor(max_workers=6) as executor:
             
                 tareas = []
             
@@ -216,10 +212,21 @@ def run():
                             )
                         )
             
+                resultados = []
+
                 for future in as_completed(tareas):
-                    df = future.result()
-                    if df is not None:
+                    resultado = future.result()
+                    if resultado is not None:
+                        resultados.append(resultado)
+                
+                # 🔥 CONVERTIR A DATAFRAME DESPUÉS (SECUENCIAL MÁS RÁPIDO)
+                for periodo_valor, contenido in resultados:
+                    try:
+                        df = pd.read_excel(BytesIO(contenido))
+                        df["PERIODO_DESCARGADO"] = periodo_valor
                         df_total.append(df)
+                    except Exception:
+                        pass
 
             if not df_total:
                 st.info("ℹ️ Humano no se descargaron datos.")
