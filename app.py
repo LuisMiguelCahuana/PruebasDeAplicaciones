@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from io import BytesIO
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side
@@ -57,8 +58,7 @@ def download_excel_from_drive(file_id):
 
 
 @st.cache_data(ttl=600)
-def descargar_archivo_cacheado(codigo, periodo="0"):
-    session = st.session_state.session
+def descargar_archivo_paralelo(session, codigo, periodo="0"):
     zona = ZoneInfo("America/Lima")
     hoy = datetime.now(zona).strftime("%Y-%m-%d")
 
@@ -67,14 +67,19 @@ def descargar_archivo_cacheado(codigo, periodo="0"):
         f"U/{hoy}/{hoy}/0/{codigo}/0/0/0/0/0/0/0/0/9/{periodo}"
     )
 
-    response = session.get(url, headers=headers)
+    try:
+        response = session.get(url, headers=headers)
 
-    if response.headers.get("Content-Type") == \
-       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-        try:
-            return pd.read_excel(BytesIO(response.content))
-        except Exception:
-            return None
+        if response.headers.get("Content-Type") == \
+           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+
+            df = pd.read_excel(BytesIO(response.content))
+            df["PERIODO_DESCARGADO"] = periodo
+            return df
+
+    except Exception:
+        return None
+
     return None
 
 
@@ -192,13 +197,28 @@ def run():
 
             df_total = []
 
-            for nombre_concatenado in seleccionados:
-                codigo = st.session_state.ciclos_disponibles[nombre_concatenado]
-
-                for periodo_valor, nombre in periodos:
-                    df = descargar_archivo_cacheado(codigo, periodo_valor)
+            session = st.session_state.session
+            
+            with ThreadPoolExecutor(max_workers=10) as executor:
+            
+                tareas = []
+            
+                for nombre_concatenado in seleccionados:
+                    codigo = st.session_state.ciclos_disponibles[nombre_concatenado]
+            
+                    for periodo_valor, nombre in periodos:
+                        tareas.append(
+                            executor.submit(
+                                descargar_archivo_paralelo,
+                                session,
+                                codigo,
+                                periodo_valor
+                            )
+                        )
+            
+                for future in as_completed(tareas):
+                    df = future.result()
                     if df is not None:
-                        df["PERIODO_DESCARGADO"] = periodo_valor
                         df_total.append(df)
 
             if not df_total:
