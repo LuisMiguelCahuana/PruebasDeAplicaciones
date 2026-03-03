@@ -65,7 +65,7 @@ def download_excel_from_drive(file_id):
 
 
 #@st.cache_data(ttl=600)
-def descargar_archivo_paralelo(session, codigo, hoy, periodo="0"):
+def descargar_archivo_paralelo(session, codigo, periodo="0"):
     zona = ZoneInfo("America/Lima")
     hoy = datetime.now(zona).strftime("%Y-%m-%d")
 
@@ -242,7 +242,6 @@ def run():
                                 descargar_archivo_paralelo,
                                 session,
                                 codigo,
-                                hoy,
                                 periodo_valor
                             )
                         )
