@@ -211,22 +211,11 @@ def run():
                                 periodo_valor
                             )
                         )
-            
-                resultados = []
 
                 for future in as_completed(tareas):
-                    resultado = future.result()
-                    if resultado is not None:
-                        resultados.append(resultado)
-                
-                # 🔥 CONVERTIR A DATAFRAME DESPUÉS (SECUENCIAL MÁS RÁPIDO)
-                for periodo_valor, contenido in resultados:
-                    try:
-                        df = pd.read_excel(BytesIO(contenido))
-                        df["PERIODO_DESCARGADO"] = periodo_valor
+                    df = future.result()
+                    if df is not None:
                         df_total.append(df)
-                    except Exception:
-                        pass
 
             if not df_total:
                 st.info("ℹ️ Humano no se descargaron datos.")
