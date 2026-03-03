@@ -7,14 +7,16 @@ import pandas as pd
 from io import BytesIO
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side
 
 # ================= CONFIG =================
 login_url = "http://sigof.distriluz.com.pe/plus/usuario/login"
 FILE_ID = "1td-2WGFN0FUlas0Vx8yYUSb7EZc7MbGWjHDtJYhEY-0"
-headers = {"User-Agent": "Mozilla/5.0", "Referer": login_url}
+headers = {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": login_url
+}
 # ==========================================
 
 
@@ -33,7 +35,11 @@ def login_and_get_defecto_iduunn(session, usuario, password):
 
     response = session.post(login_url, data=credentials, headers=headers)
 
-    match_iduunn = re.search(r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'", response.text)
+    match_iduunn = re.search(
+        r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'",
+        response.text
+    )
+
     if not match_iduunn:
         return None, False
 
@@ -54,24 +60,33 @@ def login_and_get_defecto_iduunn(session, usuario, password):
 def download_excel_from_drive(file_id):
     url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
     response = requests.get(url)
-    return pd.read_excel(BytesIO(response.content)) if response.status_code == 200 else None
+
+    if response.status_code == 200:
+        return pd.read_excel(BytesIO(response.content))
+
+    return None
 
 
-#@st.cache_data(ttl=600)
+@st.cache_data(ttl=600)
 def descargar_archivo_paralelo(session, codigo, periodo="0"):
     zona = ZoneInfo("America/Lima")
     hoy = datetime.now(zona).strftime("%Y-%m-%d")
 
     url = (
-        f"http://sigof.distriluz.com.pe/plus/Reportes/ajax_ordenes_historico_xls/"
+        "http://sigof.distriluz.com.pe/plus/Reportes/ajax_ordenes_historico_xls/"
         f"U/{hoy}/{hoy}/0/{codigo}/0/0/0/0/0/0/0/0/9/{periodo}"
     )
 
     try:
-        response = session.get(url, headers=headers, timeout=30)
+        response = session.get(url, headers=headers)
 
-        if response.status_code == 200 and response.content:
-            return (periodo, response.content)
+        if response.headers.get(
+            "Content-Type"
+        ) == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+
+            df = pd.read_excel(BytesIO(response.content))
+            df["PERIODO_DESCARGADO"] = periodo
+            return df
 
     except Exception:
         return None
@@ -80,35 +95,57 @@ def descargar_archivo_paralelo(session, codigo, periodo="0"):
 
 
 def run():
-    st.set_page_config(page_title="Lmc Refacturados", layout="wide")
+    st.set_page_config(
+        page_title="Lmc Refacturados",
+        layout="wide"
+    )
 
-    st.markdown("""
-    <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
-        <h1 style="font-size: clamp(18px, 5vw, 35px); text-align: center; color: #0078D7;">
-            🤖 REPORTE DE SUMINISTROS REFACTURADOS v2 (999999)
-        </h1>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
+            <h1 style="font-size: clamp(18px, 5vw, 35px); text-align: center; color: #0078D7;">
+                🤖 REPORTE DE SUMINISTROS REFACTURADOS v2 (999999)
+            </h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
+    # ===== SESSION STATE =====
     if "session" not in st.session_state:
         st.session_state.session = None
+
     if "defecto_iduunn" not in st.session_state:
         st.session_state.defecto_iduunn = None
+
     if "ciclos_disponibles" not in st.session_state:
         st.session_state.ciclos_disponibles = {}
 
     # ===== LOGIN =====
     if st.session_state.session is None:
-        usuario = st.text_input("🤵 Humano ingrese su usuario sigof", placeholder="Usuario sigof", max_chars=20)
-        password = st.text_input("🔑 Humano ingrese su contraseña sigof", placeholder="Contraseña sigof", type="password", max_chars=26)
+        usuario = st.text_input(
+            "🤵 Humano ingrese su usuario sigof",
+            placeholder="Usuario sigof",
+            max_chars=20
+        )
+
+        password = st.text_input(
+            "🔑 Humano ingrese su contraseña sigof",
+            placeholder="Contraseña sigof",
+            type="password",
+            max_chars=26
+        )
 
         if st.button("🔓 Humano inicie sesión"):
             if not usuario or not password:
                 st.warning("⚠️ Humano ingrese usuario y contraseña.")
             else:
                 session = requests.Session()
+
                 defecto_iduunn, login_ok = login_and_get_defecto_iduunn(
-                    session, usuario, password
+                    session,
+                    usuario,
+                    password
                 )
 
                 if not login_ok:
@@ -118,16 +155,22 @@ def run():
                     st.session_state.defecto_iduunn = defecto_iduunn
 
                     df_ciclos = download_excel_from_drive(FILE_ID)
+
                     if df_ciclos is None:
                         st.error("❌ Humano no se pudo descargar el Excel de ciclos.")
                         return
 
-                    df_ciclos['id_unidad'] = (
-                        pd.to_numeric(df_ciclos['id_unidad'], errors='coerce')
-                        .fillna(-1).astype(int)
+                    df_ciclos["id_unidad"] = (
+                        pd.to_numeric(
+                            df_ciclos["id_unidad"],
+                            errors="coerce"
+                        )
+                        .fillna(-1)
+                        .astype(int)
                     )
+
                     df_ciclos = df_ciclos[
-                        df_ciclos['id_unidad'] == defecto_iduunn
+                        df_ciclos["id_unidad"] == defecto_iduunn
                     ]
 
                     if df_ciclos.empty:
@@ -135,7 +178,8 @@ def run():
                         return
 
                     ciclos_dict = {
-                        f"{r['Id_ciclo']} {r['nombre_ciclo']}": str(r['Id_ciclo'])
+                        f"{r['Id_ciclo']} {r['nombre_ciclo']}":
+                        str(r["Id_ciclo"])
                         for _, r in df_ciclos.iterrows()
                     }
 
@@ -145,22 +189,24 @@ def run():
     # ===== DESCARGA =====
     if st.session_state.ciclos_disponibles:
 
-        #st.subheader("📅 Períodos a descargar")
-
         opciones = list(st.session_state.ciclos_disponibles.keys())
-        seleccionar_todos = st.checkbox("Humano con esta opción puedes seleccionar todos los ciclos")
+        seleccionar_todos = st.checkbox(
+            "Humano con esta opción puedes seleccionar todos los ciclos"
+        )
 
-        # === NUEVA DISTRIBUCIÓN EN DOS COLUMNAS (SIN CAMBIAR TU LÓGICA) ===
         col1, col2 = st.columns([3, 0.8])
 
         with col1:
             if seleccionar_todos:
                 seleccionados = st.multiselect(
-                    "Seleccione ciclos", options=opciones, default=opciones
+                    "Seleccione ciclos",
+                    options=opciones,
+                    default=opciones
                 )
             else:
                 seleccionados = st.multiselect(
-                    "Seleccione ciclos", options=opciones
+                    "Seleccione ciclos",
+                    options=opciones
                 )
 
         with col2:
@@ -170,12 +216,14 @@ def run():
                 max_chars=6
             )
 
-            # VALIDACIÓN: SOLO NÚMEROS Y 6 DÍGITOS
-            if periodo_anterior and (not periodo_anterior.isdigit() or len(periodo_anterior) != 6):
-                st.error("⚠️ Debe ser exactamente 6 dígitos numéricos (ej: 202511)")
+            if periodo_anterior and (
+                not periodo_anterior.isdigit()
+                or len(periodo_anterior) != 6
+            ):
+                st.error(
+                    "⚠️ Debe ser exactamente 6 dígitos numéricos (ej: 202511)"
+                )
                 periodo_anterior = ""
-
-        # === FIN DEL CAMBIO DE UBICACIÓN ===
 
         if st.button("Humano Procesar Suministros Refacturado"):
 
@@ -184,25 +232,22 @@ def run():
                 return
 
             if not periodo_anterior:
-                st.warning("⚠️ Humano debes ingresar el período anterior (6 dígitos).")
+                st.warning(
+                    "⚠️ Humano debes ingresar el período anterior (6 dígitos)."
+                )
                 return
 
-            periodo_actual = "0"
-
             periodos = [("0", "Actual"), (periodo_anterior, "Anterior")]
-
             df_total = []
-
             session = st.session_state.session
-            
-            with ThreadPoolExecutor(max_workers=6) as executor:
-            
+
+            with ThreadPoolExecutor(max_workers=10) as executor:
                 tareas = []
-            
-                for nombre_concatenado in seleccionados:
-                    codigo = st.session_state.ciclos_disponibles[nombre_concatenado]
-            
-                    for periodo_valor, nombre in periodos:
+
+                for nombre in seleccionados:
+                    codigo = st.session_state.ciclos_disponibles[nombre]
+
+                    for periodo_valor, _ in periodos:
                         tareas.append(
                             executor.submit(
                                 descargar_archivo_paralelo,
@@ -223,17 +268,16 @@ def run():
 
             df_final = pd.concat(df_total, ignore_index=True)
 
-            # =======================
-            # 📌 CÁLCULO INTERNO DE REFACCTURADOS (SIN CAMBIOS)
-            # =======================
+            # ===== CÁLCULO REFACCTURADOS =====
+            df_actual = df_final[
+                df_final["PERIODO_DESCARGADO"] == "0"
+            ].copy()
 
-            df_actual = df_final[df_final["PERIODO_DESCARGADO"] == "0"].copy()
             df_anterior = df_final[
                 df_final["PERIODO_DESCARGADO"] == periodo_anterior
             ].copy()
 
             df_anterior = df_anterior[df_anterior["obs"] != 30]
-
             df_actual = df_actual[df_actual["consumo"] > 9999]
             df_actual = df_actual[df_actual["obs"] != 30]
 
@@ -253,26 +297,37 @@ def run():
                 df_comparacion["Diferencia Lectura"] < 0
             ].copy()
 
-            # =======================
-            # 📌 PREPARAR ARCHIVO FINAL
-            # =======================
-
+            # ===== PREPARAR ARCHIVO =====
             df_descarga = pd.DataFrame({
-                "Uu.ee - Uu.oo": df_refacturados["id"] if "id" in df_refacturados.columns else None,
-                "Mes Refacturado": df_refacturados["pfactura"],
-                "Suministro": df_refacturados["suministro"],
-                "Medidor": df_refacturados["medidor"],
-                "Lecturista": df_refacturados["lecturista"],
-                "Ciclo": df_refacturados["ciclo"],
-                "Sector": df_refacturados["sector"],
-                "Ruta": df_refacturados["ruta"],
-                "Consumo": df_refacturados["consumo"],
-                "Diferencia Lectura": df_refacturados["Diferencia Lectura"]
+                "Uu.ee - Uu.oo":
+                    df_refacturados["id"]
+                    if "id" in df_refacturados.columns else None,
+                "Mes Refacturado":
+                    df_refacturados["pfactura"],
+                "Suministro":
+                    df_refacturados["suministro"],
+                "Medidor":
+                    df_refacturados["medidor"],
+                "Lecturista":
+                    df_refacturados["lecturista"],
+                "Ciclo":
+                    df_refacturados["ciclo"],
+                "Sector":
+                    df_refacturados["sector"],
+                "Ruta":
+                    df_refacturados["ruta"],
+                "Consumo":
+                    df_refacturados["consumo"],
+                "Diferencia Lectura":
+                    df_refacturados["Diferencia Lectura"]
             })
 
-            # ===== EXPORTAR =====
             output = BytesIO()
-            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+
+            with pd.ExcelWriter(
+                output,
+                engine="openpyxl"
+            ) as writer:
                 df_descarga.to_excel(
                     writer,
                     index=False,
