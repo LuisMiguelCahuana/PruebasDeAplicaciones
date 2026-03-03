@@ -13,6 +13,7 @@ from openpyxl.styles import PatternFill, Font, Border, Side
 # ================= CONFIG =================
 login_url = "http://sigof.distriluz.com.pe/plus/usuario/login"
 FILE_ID = "1td-2WGFN0FUlas0Vx8yYUSb7EZc7MbGWjHDtJYhEY-0"
+
 headers = {
     "User-Agent": "Mozilla/5.0",
     "Referer": login_url
@@ -28,18 +29,14 @@ def login_and_get_defecto_iduunn(session, usuario, password):
 
     login_page = session.get(login_url, headers=headers)
     soup = BeautifulSoup(login_page.text, "html.parser")
-    csrf_token = soup.find("input", {"name": "_csrf_token"})
 
+    csrf_token = soup.find("input", {"name": "_csrf_token"})
     if csrf_token:
         credentials["_csrf_token"] = csrf_token["value"]
 
     response = session.post(login_url, data=credentials, headers=headers)
 
-    match_iduunn = re.search(
-        r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'",
-        response.text
-    )
-
+    match_iduunn = re.search(r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'", response.text)
     if not match_iduunn:
         return None, False
 
@@ -73,16 +70,15 @@ def descargar_archivo_paralelo(session, codigo, periodo="0"):
     hoy = datetime.now(zona).strftime("%Y-%m-%d")
 
     url = (
-        "http://sigof.distriluz.com.pe/plus/Reportes/ajax_ordenes_historico_xls/"
+        f"http://sigof.distriluz.com.pe/plus/Reportes/ajax_ordenes_historico_xls/"
         f"U/{hoy}/{hoy}/0/{codigo}/0/0/0/0/0/0/0/0/9/{periodo}"
     )
 
     try:
         response = session.get(url, headers=headers)
 
-        if response.headers.get(
-            "Content-Type"
-        ) == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        if response.headers.get("Content-Type") == \
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
 
             df = pd.read_excel(BytesIO(response.content))
             df["PERIODO_DESCARGADO"] = periodo
@@ -95,23 +91,16 @@ def descargar_archivo_paralelo(session, codigo, periodo="0"):
 
 
 def run():
-    st.set_page_config(
-        page_title="Lmc Refacturados",
-        layout="wide"
-    )
+    st.set_page_config(page_title="Lmc Refacturados", layout="wide")
 
-    st.markdown(
-        """
+    st.markdown("""
         <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
             <h1 style="font-size: clamp(18px, 5vw, 35px); text-align: center; color: #0078D7;">
                 🤖 REPORTE DE SUMINISTROS REFACTURADOS v2 (999999)
             </h1>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+    """, unsafe_allow_html=True)
 
-    # ===== SESSION STATE =====
     if "session" not in st.session_state:
         st.session_state.session = None
 
@@ -121,8 +110,9 @@ def run():
     if "ciclos_disponibles" not in st.session_state:
         st.session_state.ciclos_disponibles = {}
 
-    # ===== LOGIN =====
+    # ================= LOGIN =================
     if st.session_state.session is None:
+
         usuario = st.text_input(
             "🤵 Humano ingrese su usuario sigof",
             placeholder="Usuario sigof",
@@ -137,15 +127,13 @@ def run():
         )
 
         if st.button("🔓 Humano inicie sesión"):
+
             if not usuario or not password:
                 st.warning("⚠️ Humano ingrese usuario y contraseña.")
             else:
                 session = requests.Session()
-
                 defecto_iduunn, login_ok = login_and_get_defecto_iduunn(
-                    session,
-                    usuario,
-                    password
+                    session, usuario, password
                 )
 
                 if not login_ok:
@@ -160,17 +148,14 @@ def run():
                         st.error("❌ Humano no se pudo descargar el Excel de ciclos.")
                         return
 
-                    df_ciclos["id_unidad"] = (
-                        pd.to_numeric(
-                            df_ciclos["id_unidad"],
-                            errors="coerce"
-                        )
+                    df_ciclos['id_unidad'] = (
+                        pd.to_numeric(df_ciclos['id_unidad'], errors='coerce')
                         .fillna(-1)
                         .astype(int)
                     )
 
                     df_ciclos = df_ciclos[
-                        df_ciclos["id_unidad"] == defecto_iduunn
+                        df_ciclos['id_unidad'] == defecto_iduunn
                     ]
 
                     if df_ciclos.empty:
@@ -178,15 +163,14 @@ def run():
                         return
 
                     ciclos_dict = {
-                        f"{r['Id_ciclo']} {r['nombre_ciclo']}":
-                        str(r["Id_ciclo"])
+                        f"{r['Id_ciclo']} {r['nombre_ciclo']}": str(r['Id_ciclo'])
                         for _, r in df_ciclos.iterrows()
                     }
 
                     st.session_state.ciclos_disponibles = ciclos_dict
                     st.rerun()
 
-    # ===== DESCARGA =====
+    # ================= DESCARGA =================
     if st.session_state.ciclos_disponibles:
 
         opciones = list(st.session_state.ciclos_disponibles.keys())
@@ -216,14 +200,10 @@ def run():
                 max_chars=6
             )
 
-            if periodo_anterior and (
-                not periodo_anterior.isdigit()
-                or len(periodo_anterior) != 6
-            ):
-                st.error(
-                    "⚠️ Debe ser exactamente 6 dígitos numéricos (ej: 202511)"
-                )
-                periodo_anterior = ""
+        if periodo_anterior and (
+                not periodo_anterior.isdigit() or len(periodo_anterior) != 6):
+            st.error("⚠️ Debe ser exactamente 6 dígitos numéricos (ej: 202511)")
+            periodo_anterior = ""
 
         if st.button("Humano Procesar Suministros Refacturado"):
 
@@ -232,9 +212,7 @@ def run():
                 return
 
             if not periodo_anterior:
-                st.warning(
-                    "⚠️ Humano debes ingresar el período anterior (6 dígitos)."
-                )
+                st.warning("⚠️ Humano debes ingresar el período anterior (6 dígitos).")
                 return
 
             periodos = [("0", "Actual"), (periodo_anterior, "Anterior")]
@@ -244,8 +222,8 @@ def run():
             with ThreadPoolExecutor(max_workers=10) as executor:
                 tareas = []
 
-                for nombre in seleccionados:
-                    codigo = st.session_state.ciclos_disponibles[nombre]
+                for nombre_concatenado in seleccionados:
+                    codigo = st.session_state.ciclos_disponibles[nombre_concatenado]
 
                     for periodo_valor, _ in periodos:
                         tareas.append(
@@ -268,11 +246,8 @@ def run():
 
             df_final = pd.concat(df_total, ignore_index=True)
 
-            # ===== CÁLCULO REFACCTURADOS =====
-            df_actual = df_final[
-                df_final["PERIODO_DESCARGADO"] == "0"
-            ].copy()
-
+            # ================= CÁLCULO REFACCTURADOS =================
+            df_actual = df_final[df_final["PERIODO_DESCARGADO"] == "0"].copy()
             df_anterior = df_final[
                 df_final["PERIODO_DESCARGADO"] == periodo_anterior
             ].copy()
@@ -297,37 +272,27 @@ def run():
                 df_comparacion["Diferencia Lectura"] < 0
             ].copy()
 
-            # ===== PREPARAR ARCHIVO =====
+            # ================= PREPARAR ARCHIVO =================
             df_descarga = pd.DataFrame({
                 "Uu.ee - Uu.oo":
                     df_refacturados["id"]
                     if "id" in df_refacturados.columns else None,
-                "Mes Refacturado":
-                    df_refacturados["pfactura"],
-                "Suministro":
-                    df_refacturados["suministro"],
-                "Medidor":
-                    df_refacturados["medidor"],
-                "Lecturista":
-                    df_refacturados["lecturista"],
-                "Ciclo":
-                    df_refacturados["ciclo"],
-                "Sector":
-                    df_refacturados["sector"],
-                "Ruta":
-                    df_refacturados["ruta"],
-                "Consumo":
-                    df_refacturados["consumo"],
+                "Mes Refacturado": df_refacturados["pfactura"],
+                "Suministro": df_refacturados["suministro"],
+                "Medidor": df_refacturados["medidor"],
+                "Lecturista": df_refacturados["lecturista"],
+                "Ciclo": df_refacturados["ciclo"],
+                "Sector": df_refacturados["sector"],
+                "Ruta": df_refacturados["ruta"],
+                "Consumo": df_refacturados["consumo"],
                 "Diferencia Lectura":
                     df_refacturados["Diferencia Lectura"]
             })
 
+            # ================= EXPORTAR =================
             output = BytesIO()
 
-            with pd.ExcelWriter(
-                output,
-                engine="openpyxl"
-            ) as writer:
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 df_descarga.to_excel(
                     writer,
                     index=False,
@@ -343,37 +308,35 @@ def run():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        if st.session_state.session is not None:
-            if st.button("🔒 Cerrar sesión"):
-                st.session_state.session = None
-                st.session_state.defecto_iduunn = None
-                st.session_state.ciclos_disponibles = {}
-                st.rerun()
+    # ================= LOGOUT =================
+    if st.session_state.session is not None:
+        if st.button("🔒 Cerrar sesión"):
+            st.session_state.session = None
+            st.session_state.defecto_iduunn = None
+            st.session_state.ciclos_disponibles = {}
+            st.rerun()
 
+    # ================= FOOTER =================
+    st.markdown("""
+        <style>
+        .footer {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            background-color: white;
+            padding: 10px 8px;
+            text-align: center;
+            font-size: 14px;
+            color: gray;
+            z-index: 9999;
+            border-top: 1px solid #ddd;
+        }
+        </style>
+        <div class="footer">
+            Desarrollado por Luis M. Cahuana F.
+        </div>
+    """, unsafe_allow_html=True)
 
-# ===== FOOTER =====
-st.markdown(
-    """
-    <style>
-    .footer {
-        position: fixed;
-        bottom: 0;
-        width: 100%;
-        background-color: white;
-        padding: 10px 8px;
-        text-align: center;
-        font-size: 14px;
-        color: gray;
-        z-index: 9999;
-        border-top: 1px solid #ddd;
-    }
-    </style>
-    <div class="footer">
-        Desarrollado por Luis M. Cahuana F.
-    </div>
-    """,
-    unsafe_allow_html=True
-)
 
 if __name__ == "__main__":
     run()
