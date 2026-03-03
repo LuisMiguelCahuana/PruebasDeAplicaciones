@@ -65,7 +65,7 @@ def download_excel_from_drive(file_id):
 
 
 #@st.cache_data(ttl=600)
-def descargar_archivo_paralelo(session, codigo, periodo="0"):
+def descargar_archivo_paralelo(session, codigo, hoy, periodo="0"):
     zona = ZoneInfo("America/Lima")
     hoy = datetime.now(zona).strftime("%Y-%m-%d")
 
@@ -80,7 +80,15 @@ def descargar_archivo_paralelo(session, codigo, periodo="0"):
         if response.headers.get("Content-Type") == \
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
 
-            df = pd.read_excel(BytesIO(response.content))
+            df = pd.read_excel(
+                BytesIO(response.content),
+                engine="openpyxl",
+                dtype={
+                    "suministro": "string",
+                    "lectura": "float64",
+                    "consumo": "float64"
+                }
+            )
             df["PERIODO_DESCARGADO"] = periodo
             return df
 
@@ -219,8 +227,8 @@ def run():
             df_total = []
             session = st.session_state.session
 
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                tareas = []
+            max_hilos = min(8, len(seleccionados) * 2)
+            with ThreadPoolExecutor(max_workers=max_hilos) as executor:
 
                 for nombre_concatenado in seleccionados:
                     codigo = st.session_state.ciclos_disponibles[nombre_concatenado]
@@ -231,6 +239,7 @@ def run():
                                 descargar_archivo_paralelo,
                                 session,
                                 codigo,
+                                hoy,
                                 periodo_valor
                             )
                         )
@@ -244,7 +253,8 @@ def run():
                 st.info("ℹ️ Humano no se descargaron datos.")
                 return
 
-            df_final = pd.concat(df_total, ignore_index=True)
+            df_final = pd.concat(df_total, ignore_index=True, copy=False)
+            del df_total
 
             # ================= CÁLCULO REFACCTURADOS =================
             df_actual = df_final[df_final["PERIODO_DESCARGADO"] == "0"].copy()
@@ -256,11 +266,19 @@ def run():
             df_actual = df_actual[df_actual["consumo"] > 9999]
             df_actual = df_actual[df_actual["obs"] != 30]
 
-            df_comparacion = df_actual.merge(
-                df_anterior[["suministro", "lectura"]],
+            # 🔥 AGREGAR AQUÍ
+            df_actual["suministro"] = df_actual["suministro"].astype("string")
+            df_anterior["suministro"] = df_anterior["suministro"].astype("string")
+
+            df_anterior_small = df_anterior[["suministro", "lectura"]]
+
+            df_comparacion = pd.merge(
+                df_actual,
+                df_anterior_small,
                 on="suministro",
                 how="inner",
-                suffixes=("_actual", "_anterior")
+                suffixes=("_actual", "_anterior"),
+                sort=False
             )
 
             df_comparacion["Diferencia Lectura"] = (
