@@ -226,8 +226,11 @@ def run():
             periodos = [("0", "Actual"), (periodo_anterior, "Anterior")]
             df_total = []
             session = st.session_state.session
-
+            
             max_hilos = min(8, len(seleccionados) * 2)
+            
+            tareas = []   # 🔥 AGREGAR ESTA LÍNEA
+            
             with ThreadPoolExecutor(max_workers=max_hilos) as executor:
 
                 for nombre_concatenado in seleccionados:
