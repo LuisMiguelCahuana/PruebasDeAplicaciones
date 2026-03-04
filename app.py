@@ -1,362 +1,203 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-from zoneinfo import ZoneInfo
 import pandas as pd
-from io import BytesIO
+import requests
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from openpyxl import load_workbook
-from openpyxl.styles import PatternFill, Font, Border, Side
+from bs4 import BeautifulSoup
+import time
 
 # ================= CONFIG =================
-login_url = "http://sigof.distriluz.com.pe/plus/usuario/login"
-FILE_ID = "1td-2WGFN0FUlas0Vx8yYUSb7EZc7MbGWjHDtJYhEY-0"
+LOGIN_URL = "http://sigof.distriluz.com.pe/plus/usuario/login"
+DASH_URL = "http://sigof.distriluz.com.pe/plus/dashboard/modulos"
+ASIGNAR_URL = "http://sigof.distriluz.com.pe/plus/ComrepOrdenrepartos/ajax_guardarlecturistalibro"
+CAMBIAR_UNIDAD_URL = "http://sigof.distriluz.com.pe/plus/usuario/ajax_cambiar_sesion"
 
-headers = {
+HEADERS = {
     "User-Agent": "Mozilla/5.0",
-    "Referer": login_url
+    "Referer": LOGIN_URL,
 }
-# ==========================================
 
+# =========================
+# UNIDADES SIGOF
+# =========================
+UNIDADES = {
+    "Ayacucho": 76,
+    "Huancayo": 77,
+    "Huancavelica": 78,
+    "Tarma": 79,
+    "Selva Central": 80,
+    "Pasco": 81,
+    "Huánuco": 82,
+    "Valle Mantaro": 83,
+    "Tingo María": 84
+}
 
-def login_and_get_defecto_iduunn(session, usuario, password):
+# ================= LOGIN REAL SIGOF =================
+def login_sigof_real(session, usuario, password):
     credentials = {
         "data[Usuario][usuario]": usuario,
         "data[Usuario][pass]": password
     }
 
-    login_page = session.get(login_url, headers=headers)
+    login_page = session.get(LOGIN_URL, headers=HEADERS)
     soup = BeautifulSoup(login_page.text, "html.parser")
-
     csrf_token = soup.find("input", {"name": "_csrf_token"})
     if csrf_token:
         credentials["_csrf_token"] = csrf_token["value"]
 
-    response = session.post(login_url, data=credentials, headers=headers)
+    response = session.post(LOGIN_URL, data=credentials, headers=HEADERS)
 
-    match_iduunn = re.search(r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'", response.text)
-    if not match_iduunn:
-        return None, False
+    match = re.search(r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'", response.text)
+    if not match:
+        return False
 
-    defecto_iduunn = int(match_iduunn.group(1))
+    dash = session.get(DASH_URL, headers=HEADERS)
+    if "login" in dash.text.lower():
+        return False
 
-    dashboard_response = session.get(
-        "http://sigof.distriluz.com.pe/plus/dashboard/modulos",
-        headers=headers
-    )
+    return True
 
-    if "login" in dashboard_response.text:
-        return None, False
+# ================= CAMBIO DE UNIDAD =================
+def cambiar_unidad_sigof(session, iduunn):
+    payload = {
+        "idempresa": 4,
+        "iduunn": iduunn
+    }
+    session.post(CAMBIAR_UNIDAD_URL, data=payload, headers=HEADERS)
+    test = session.get(DASH_URL, headers=HEADERS)
+    return str(iduunn) in test.text
 
-    return defecto_iduunn, True
-
-
-@st.cache_data(ttl=600)
-def download_excel_from_drive(file_id):
-    url = f"https://docs.google.com/spreadsheets/d/{file_id}/export?format=xlsx"
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        return pd.read_excel(BytesIO(response.content))
-
-    return None
-
-
-#@st.cache_data(ttl=600)
-def descargar_archivo_paralelo(session, codigo, periodo="0"):
-    zona = ZoneInfo("America/Lima")
-    hoy = datetime.now(zona).strftime("%Y-%m-%d")
-
-    url = (
-        f"http://sigof.distriluz.com.pe/plus/Reportes/ajax_ordenes_historico_xls/"
-        f"U/{hoy}/{hoy}/0/{codigo}/0/0/0/0/0/0/0/0/9/{periodo}"
-    )
-
-    try:
-        response = session.get(url, headers=headers)
-
-        if response.headers.get("Content-Type") == \
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-
-            df = pd.read_excel(
-                BytesIO(response.content),
-                engine="openpyxl",
-                dtype={
-                    "suministro": "string",
-                    "lectura": "float64",
-                    "consumo": "float64"
-                }
-            )
-            df["PERIODO_DESCARGADO"] = periodo
-            return df
-
-    except Exception:
-        return None
-
-    return None
-
-
+# ================= STREAMLIT =================
 def run():
-    st.set_page_config(page_title="Lmc Refacturados", layout="wide")
+
+    st.set_page_config(page_title="Lmc Asig Lect", layout="wide")
+#st.set_page_config(page_title="Lmc Asig Reparto", layout="wide")
 
     st.markdown("""
-        <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
-            <h1 style="font-size: clamp(18px, 5vw, 35px); text-align: center; color: #0078D7;">
-                🤖 REPORTE DE SUMINISTROS REFACTURADOS v2 (999999)
-            </h1>
-        </div>
+    <h3 style="text-align:center;color:#05DF72">
+    🤖 ASIGNACIÓN AUTOMÁTICA v2 DE OTs REPARTO
+    </h3>
     """, unsafe_allow_html=True)
-
+    
+    # ================= ESTADOS =================
     if "session" not in st.session_state:
         st.session_state.session = None
-
-    if "defecto_iduunn" not in st.session_state:
-        st.session_state.defecto_iduunn = None
-
-    if "ciclos_disponibles" not in st.session_state:
-        st.session_state.ciclos_disponibles = {}
-
+    if "login_ok" not in st.session_state:
+        st.session_state.login_ok = False
+    if "unidad_actual" not in st.session_state:
+        st.session_state.unidad_actual = None
+    
     # ================= LOGIN =================
-    if st.session_state.session is None:
-
+    if not st.session_state.login_ok:
         usuario = st.text_input(
-            "🤵 Humano ingrese su usuario sigof",
-            placeholder="Usuario sigof",
+            "🤵 Humano ingrese su usuario SIGOF",
+            placeholder="Usuario SIGOF",
             max_chars=20
         )
-
         password = st.text_input(
-            "🔑 Humano ingrese su contraseña sigof",
-            placeholder="Contraseña sigof",
+            "🔑 Humano ingrese su contraseña SIGOF",
+            placeholder="Contraseña SIGOF",
             type="password",
             max_chars=26
         )
-
+    
         if st.button("🔓 Humano inicie sesión"):
-
-            if not usuario or not password:
-                st.warning("⚠️ Humano ingrese usuario y contraseña.")
+            session = requests.Session()
+    
+            if not login_sigof_real(session, usuario, password):
+                st.error("❌ Humano credenciales incorrectas")
             else:
-                session = requests.Session()
-                defecto_iduunn, login_ok = login_and_get_defecto_iduunn(
-                    session, usuario, password
-                )
-
-                if not login_ok:
-                    st.error("❌ Humano tu usuario o contraseña incorrectos.")
-                else:
-                    st.session_state.session = session
-                    st.session_state.defecto_iduunn = defecto_iduunn
-
-                    df_ciclos = download_excel_from_drive(FILE_ID)
-
-                    if df_ciclos is None:
-                        st.error("❌ Humano no se pudo descargar el Excel de ciclos.")
-                        return
-
-                    df_ciclos['id_unidad'] = (
-                        pd.to_numeric(df_ciclos['id_unidad'], errors='coerce')
-                        .fillna(-1)
-                        .astype(int)
-                    )
-
-                    df_ciclos = df_ciclos[
-                        df_ciclos['id_unidad'] == defecto_iduunn
-                    ]
-
-                    if df_ciclos.empty:
-                        st.error("⚠️ Humano no tienes ciclos asignados.")
-                        return
-
-                    ciclos_dict = {
-                        f"{r['Id_ciclo']} {r['nombre_ciclo']}": str(r['Id_ciclo'])
-                        for _, r in df_ciclos.iterrows()
-                    }
-
-                    st.session_state.ciclos_disponibles = ciclos_dict
-                    st.rerun()
-
-    # ================= DESCARGA =================
-    if st.session_state.ciclos_disponibles:
-
-        opciones = list(st.session_state.ciclos_disponibles.keys())
-        seleccionar_todos = st.checkbox(
-            "Humano con esta opción puedes seleccionar todos los ciclos"
+                dash = session.get(DASH_URL, headers=HEADERS)
+                match = re.search(r"var DEFECTO_IDUUNN\s*=\s*'(\d+)'", dash.text)
+                if match:
+                    st.session_state.unidad_actual = int(match.group(1))
+    
+                st.session_state.session = session
+                st.session_state.login_ok = True
+                st.success("✔ Login correcto")
+                st.rerun()
+    
+    # ================= ASIGNACIÓN =================
+    if st.session_state.login_ok:
+    
+        nombre_actual = {v: k for k, v in UNIDADES.items()}.get(
+            st.session_state.unidad_actual, "Ayacucho"
         )
-
-        col1, col2 = st.columns([3, 0.8])
-
-        with col1:
-            if seleccionar_todos:
-                seleccionados = st.multiselect(
-                    "Seleccione ciclos",
-                    options=opciones,
-                    default=opciones
-                )
-            else:
-                seleccionados = st.multiselect(
-                    "Seleccione ciclos",
-                    options=opciones
-                )
-
-        with col2:
-            periodo_anterior = st.text_input(
-                "👉Periodo Anterior (Ejm: 202511)",
-                placeholder="Ejemplo: 202511",
-                max_chars=6
-            )
-
-        if periodo_anterior and (
-                not periodo_anterior.isdigit() or len(periodo_anterior) != 6):
-            st.error("⚠️ Debe ser exactamente 6 dígitos numéricos (ej: 202511)")
-            periodo_anterior = ""
-
-        if st.button("Humano Procesar Suministros Refacturado"):
-
-            if not seleccionados:
-                st.warning("⚠️ Humano seleccione al menos un ciclo.")
-                return
-
-            if not periodo_anterior:
-                st.warning("⚠️ Humano debes ingresar el período anterior (6 dígitos).")
-                return
-
-            periodos = [("0", "Actual"), (periodo_anterior, "Anterior")]
-            df_total = []
-            session = st.session_state.session
-            
-            max_hilos = min(8, len(seleccionados) * 2)
-            
-            tareas = []   # 🔥 AGREGAR ESTA LÍNEA
-            
-            with ThreadPoolExecutor(max_workers=max_hilos) as executor:
-
-                for nombre_concatenado in seleccionados:
-                    codigo = st.session_state.ciclos_disponibles[nombre_concatenado]
-
-                    for periodo_valor, _ in periodos:
-                        tareas.append(
-                            executor.submit(
-                                descargar_archivo_paralelo,
-                                session,
-                                codigo,
-                                periodo_valor
-                            )
-                        )
-
-                for future in as_completed(tareas):
-                    df = future.result()
-                    if df is not None:
-                        df_total.append(df)
-
-            if not df_total:
-                st.info("ℹ️ Humano no se descargaron datos.")
-                return
-
-            df_final = pd.concat(df_total, ignore_index=True, copy=False)
-            del df_total
-
-            # ================= CÁLCULO REFACCTURADOS =================
-            df_actual = df_final[df_final["PERIODO_DESCARGADO"] == "0"].copy()
-            df_anterior = df_final[
-                df_final["PERIODO_DESCARGADO"] == periodo_anterior
-            ].copy()
-
-            df_anterior = df_anterior[df_anterior["obs"] != 30]
-            df_actual = df_actual[df_actual["consumo"] > 9999]
-            df_actual = df_actual[df_actual["obs"] != 30]
-
-            # 🔥 AGREGAR AQUÍ
-            df_actual["suministro"] = df_actual["suministro"].astype("string")
-            df_anterior["suministro"] = df_anterior["suministro"].astype("string")
-
-            df_anterior_small = df_anterior[["suministro", "lectura"]]
-
-            df_comparacion = pd.merge(
-                df_actual,
-                df_anterior_small,
-                on="suministro",
-                how="inner",
-                suffixes=("_actual", "_anterior"),
-                sort=False
-            )
-
-            df_comparacion["Diferencia Lectura"] = (
-                df_comparacion["lectura_actual"]
-                - df_comparacion["lectura_anterior"]
-            )
-
-            df_refacturados = df_comparacion[
-                df_comparacion["Diferencia Lectura"] < 0
-            ].copy()
-
-            # ================= PREPARAR ARCHIVO =================
-            df_descarga = pd.DataFrame({
-                "Uu.ee - Uu.oo":
-                    df_refacturados["id"]
-                    if "id" in df_refacturados.columns else None,
-                "Mes Refacturado": df_refacturados["pfactura"],
-                "Suministro": df_refacturados["suministro"],
-                "Medidor": df_refacturados["medidor"],
-                "Lecturista": df_refacturados["lecturista"],
-                "Ciclo": df_refacturados["ciclo"],
-                "Sector": df_refacturados["sector"],
-                "Ruta": df_refacturados["ruta"],
-                "Consumo": df_refacturados["consumo"],
-                "Diferencia Lectura":
-                    df_refacturados["Diferencia Lectura"]
-            })
-
-            # ================= EXPORTAR =================
-            output = BytesIO()
-
-            with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                df_descarga.to_excel(
-                    writer,
-                    index=False,
-                    sheet_name="SuministrosRefacturados"
-                )
-
-            output.seek(0)
-
-            st.download_button(
-                label="📁 Humano Descargar Suministros Refacturados",
-                data=output,
-                file_name="LMC_Suministros_Refacturados_v2.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-    # ================= LOGOUT =================
-    if st.session_state.session is not None:
-        if st.button("🔒 Cerrar sesión"):
-            st.session_state.session = None
-            st.session_state.defecto_iduunn = None
-            st.session_state.ciclos_disponibles = {}
-            st.rerun()
-
-    # ================= FOOTER =================
-    st.markdown("""
-        <style>
-        .footer {
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            background-color: white;
-            padding: 10px 8px;
-            text-align: center;
-            font-size: 14px;
-            color: gray;
-            z-index: 9999;
-            border-top: 1px solid #ddd;
-        }
-        </style>
-        <div class="footer">
-            Desarrollado por Luis M. Cahuana F.
-        </div>
-    """, unsafe_allow_html=True)
-
-
+    
+        unidad = st.selectbox(
+            "🏢 Unidad Operativa",
+            list(UNIDADES.keys()),
+            index=list(UNIDADES.keys()).index(nombre_actual)
+        )
+    
+        if st.button("🔄 Cambiar Unidad"):
+            nueva = UNIDADES[unidad]
+            if nueva != st.session_state.unidad_actual:
+                ok = cambiar_unidad_sigof(st.session_state.session, nueva)
+    
+                if not ok:
+                    st.error("❌ SIGOF rechazó el cambio de unidad")
+                    st.stop()
+    
+                st.session_state.unidad_actual = nueva
+                st.success(f"Humano unidad cambiada a {unidad}")
+                time.sleep(2)
+                st.rerun()
+    
+        # ----------- SUBIR ARCHIVO REPARTO ------------
+        st.markdown("""
+            <div style="display: flex; justify-content: left; align-items: left; width: 100%;">
+                <h5 style="font-size: clamp(12px, 5vw, 22px); text-align: center; color: #05DF72;">
+                    📤 Humano subir archivo de asignaciones reparto:
+                </h5>
+            </div>
+            """, unsafe_allow_html=True)
+    
+        file = st.file_uploader("Seleccione Asignaciones_Reparto.xlsx", type="xlsx")
+    
+        if file:
+            df = pd.read_excel(file)
+    
+            columnas = ["repartidor","ciclo","sector","ruta","suministro_inicio","suministro_fin"]
+            for c in columnas:
+                if c not in df.columns:
+                    st.error(f"Falta columna: {c}")
+                    st.stop()
+    
+            if st.button("🚀 Ejecutar Asignación Reparto"):
+    
+                resultados = []
+    
+                for _, row in df.iterrows():
+                    payload = {
+                        "repartidor": int(row["repartidor"]),
+                        "ciclo": int(row["ciclo"]),
+                        "sector": int(row["sector"]),
+                        "ruta": int(row["ruta"]),
+                        "negocio": st.session_state.unidad_actual,
+                        "suministro_inicio": int(row["suministro_inicio"]),
+                        "suministro_fin": int(row["suministro_fin"]),
+                    }
+    
+                    r = st.session_state.session.post(ASIGNAR_URL, data=payload, headers=HEADERS)
+    
+                    estado = "✔ OK" if r.status_code == 200 else "❌ ERROR"
+    
+                    resultados.append({
+                        "sector": row["sector"],
+                        "ruta": row["ruta"],
+                        "repartidor": row["repartidor"],
+                        "estado": estado
+                    })
+    
+                st.success("🎉 Asignación finalizada")
+                st.dataframe(pd.DataFrame(resultados))
+    
+        # 🔒 BOTÓN PARA CERRAR SESIÓN
+        if st.session_state.session is not None:
+            if st.button("🔒 Cerrar sesión"):
+                st.session_state.session = None
+                st.session_state.login_ok = False   # 👈 ESTA LÍNEA FALTABA
+                st.session_state.unidad_actual = None
+                st.rerun()
 if __name__ == "__main__":
     run()
