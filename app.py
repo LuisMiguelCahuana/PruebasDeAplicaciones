@@ -179,11 +179,11 @@ def run():
                         st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
                         error_excel = True
     
-            if st.button("🚀 Ejecutar Asignación Reparto"):
-
-                if error_excel:
-                    st.warning("⚠ Corrija el archivo antes de ejecutar la asignación")
-                else:
+            # 🔵 SOLO MOSTRAR BOTÓN SI EL EXCEL ES CORRECTO
+            if not error_excel:
+            
+                if st.button("🚀 Ejecutar Asignación Reparto"):
+            
                     resultados = []
             
                     for _, row in df.iterrows():
