@@ -156,12 +156,26 @@ def run():
     
         if file:
             df = pd.read_excel(file)
-    
+        
             columnas = ["repartidor","ciclo","sector","ruta","suministro_inicio","suministro_fin"]
             for c in columnas:
                 if c not in df.columns:
                     st.error(f"Falta columna: {c}")
                     st.stop()
+        
+            # ================= VALIDACIÓN REPARTIDOR =================
+            # Verifica que no haya vacíos
+            if df["repartidor"].isna().any():
+                st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
+                st.stop()
+        
+            # Convertir a string para validar caracteres
+            df["repartidor"] = df["repartidor"].astype(str).str.strip()
+        
+            # Validar que solo tenga números
+            if not df["repartidor"].str.fullmatch(r"\d+").all():
+                st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
+                st.stop()
     
             if st.button("🚀 Ejecutar Asignación Reparto"):
     
