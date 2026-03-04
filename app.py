@@ -153,58 +153,63 @@ def run():
             """, unsafe_allow_html=True)
     
         file = st.file_uploader("Seleccione Asignaciones_Reparto.xlsx", type="xlsx")
-    
+
         if file:
             df = pd.read_excel(file)
+        
+            error_excel = False
         
             columnas = ["repartidor","ciclo","sector","ruta","suministro_inicio","suministro_fin"]
             for c in columnas:
                 if c not in df.columns:
                     st.error(f"Falta columna: {c}")
-                    st.stop()
+                    error_excel = True
         
             # ================= VALIDACIÓN REPARTIDOR =================
-            # Verifica que no haya vacíos
-            if df["repartidor"].isna().any():
-                st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
-                st.stop()
+            if not error_excel:
         
-            # Convertir a string para validar caracteres
-            df["repartidor"] = df["repartidor"].astype(str).str.strip()
+                if df["repartidor"].isna().any():
+                    st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
+                    error_excel = True
         
-            # Validar que solo tenga números
-            if not df["repartidor"].str.fullmatch(r"\d+").all():
-                st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
-                st.stop()
+                else:
+                    df["repartidor"] = df["repartidor"].astype(str).str.strip()
+        
+                    if not df["repartidor"].str.fullmatch(r"\d+").all():
+                        st.error("❌ Humano verifica tu excel de asignacion el campo del repartidor es incorrecto")
+                        error_excel = True
     
             if st.button("🚀 Ejecutar Asignación Reparto"):
-    
-                resultados = []
-    
-                for _, row in df.iterrows():
-                    payload = {
-                        "repartidor": int(row["repartidor"]),
-                        "ciclo": int(row["ciclo"]),
-                        "sector": int(row["sector"]),
-                        "ruta": int(row["ruta"]),
-                        "negocio": st.session_state.unidad_actual,
-                        "suministro_inicio": int(row["suministro_inicio"]),
-                        "suministro_fin": int(row["suministro_fin"]),
-                    }
-    
-                    r = st.session_state.session.post(ASIGNAR_URL, data=payload, headers=HEADERS)
-    
-                    estado = "✔ OK" if r.status_code == 200 else "❌ ERROR"
-    
-                    resultados.append({
-                        "sector": row["sector"],
-                        "ruta": row["ruta"],
-                        "repartidor": row["repartidor"],
-                        "estado": estado
-                    })
-    
-                st.success("🎉 Asignación finalizada")
-                st.dataframe(pd.DataFrame(resultados))
+
+                if error_excel:
+                    st.warning("⚠ Corrija el archivo antes de ejecutar la asignación")
+                else:
+                    resultados = []
+            
+                    for _, row in df.iterrows():
+                        payload = {
+                            "repartidor": int(row["repartidor"]),
+                            "ciclo": int(row["ciclo"]),
+                            "sector": int(row["sector"]),
+                            "ruta": int(row["ruta"]),
+                            "negocio": st.session_state.unidad_actual,
+                            "suministro_inicio": int(row["suministro_inicio"]),
+                            "suministro_fin": int(row["suministro_fin"]),
+                        }
+            
+                        r = st.session_state.session.post(ASIGNAR_URL, data=payload, headers=HEADERS)
+            
+                        estado = "✔ OK" if r.status_code == 200 else "❌ ERROR"
+            
+                        resultados.append({
+                            "sector": row["sector"],
+                            "ruta": row["ruta"],
+                            "repartidor": row["repartidor"],
+                            "estado": estado
+                        })
+            
+                    st.success("🎉 Asignación finalizada")
+                    st.dataframe(pd.DataFrame(resultados))
     
         # 🔒 BOTÓN PARA CERRAR SESIÓN
         if st.session_state.session is not None:
