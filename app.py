@@ -268,8 +268,8 @@ def run():
 
         with col2:
             periodo_anterior = st.text_input(
-                "👉Periodo Anterior (Ejm: 202601)",
-                placeholder="Ejemplo: 202601",
+                "Periodo Ant👉(Ej: 202601)",
+                placeholder="Ej: 202601",
                 max_chars=6
             )
 
