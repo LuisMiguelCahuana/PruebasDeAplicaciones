@@ -256,13 +256,13 @@ def run():
         with col1:
             if seleccionar_todos:
                 seleccionados = st.multiselect(
-                    "",
+                    "Humano elija sus ciclos:",
                     options=opciones,
                     default=opciones
                 )
             else:
                 seleccionados = st.multiselect(
-                    "",
+                    "Humano elija sus ciclos:",
                     options=opciones
                 )
 
