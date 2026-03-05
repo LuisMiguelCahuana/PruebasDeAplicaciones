@@ -8,6 +8,7 @@ from io import BytesIO
 import re
 import zipfile
 import io
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Alignment
@@ -237,7 +238,8 @@ def main():
 
                 st.session_state.defecto_iduunn = nuevo
                 st.session_state.unidad_actual = nuevo
-                st.success(f"Unidad cambiada a {unidad}")
+                st.success(f"Humano unidad cambiada a {unidad}")
+                time.sleep(2)
                 st.rerun()
 
     # ===== DESCARGA DE CICLOS =====
