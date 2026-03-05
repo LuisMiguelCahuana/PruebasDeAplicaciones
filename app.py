@@ -66,22 +66,22 @@ def login_and_get_defecto_iduunn(session, usuario, password):
     return defecto_iduunn, True
 
 
-    # ================= CAMBIAR UNIDAD =================
-    def cambiar_unidad_sigof(session, iduunn):
-    
-        payload = {
-            "idempresa": 4,
-            "iduunn": iduunn
-        }
-    
-        session.post(CAMBIAR_UNIDAD_URL, data=payload, headers=headers)
-    
-        test = session.get(
-            "http://sigof.distriluz.com.pe/plus/dashboard/modulos",
-            headers=headers
-        )
-    
-        return str(iduunn) in test.text
+# ================= CAMBIAR UNIDAD =================
+def cambiar_unidad_sigof(session, iduunn):
+
+    payload = {
+        "idempresa": 4,
+        "iduunn": iduunn
+    }
+
+    session.post(CAMBIAR_UNIDAD_URL, data=payload, headers=headers)
+
+    test = session.get(
+        "http://sigof.distriluz.com.pe/plus/dashboard/modulos",
+        headers=headers
+    )
+
+    return str(iduunn) in test.text
 
 
 @st.cache_data(ttl=600)
@@ -268,8 +268,8 @@ def run():
 
         with col2:
             periodo_anterior = st.text_input(
-                "👉Periodo Anterior (Ejm: 202511)",
-                placeholder="Ejemplo: 202511",
+                "👉Periodo Anterior (Ejm: 202601)",
+                placeholder="Ejemplo: 202601",
                 max_chars=6
             )
 
