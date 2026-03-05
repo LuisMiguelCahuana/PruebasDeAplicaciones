@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from io import BytesIO
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, Font, Border, Side
@@ -63,6 +64,8 @@ def login_and_get_defecto_iduunn(session, usuario, password):
         return None, False
 
     return defecto_iduunn, True
+
+
     # ================= CAMBIAR UNIDAD =================
     def cambiar_unidad_sigof(session, iduunn):
     
