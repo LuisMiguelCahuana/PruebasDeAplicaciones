@@ -214,7 +214,7 @@ def run():
             st.session_state.defecto_iduunn, "Ayacucho"
         )    
         unidad = st.selectbox(
-            "🏢 Unidad Operativa",
+            "🏢 Humano elija su unidad empresarial o operativa",
             list(UNIDADES.keys()),
             index=list(UNIDADES.keys()).index(nombre_actual)
         )    
