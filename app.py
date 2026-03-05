@@ -8,6 +8,7 @@ from io import BytesIO
 import re
 import zipfile
 import io
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Alignment
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -259,13 +260,29 @@ def main():
             else:
                 st.session_state.archivos_descargados.clear()
 
-                for nombre in seleccionados:
-                    codigo = st.session_state.ciclos_disponibles[nombre]
-                    contenido, filename = descargar_archivo(
-                        st.session_state.session, codigo, periodo, nombre
-                    )
-                    if contenido:
-                        st.session_state.archivos_descargados[filename] = contenido
+                with ThreadPoolExecutor(max_workers=6) as executor:
+
+                    tareas = []
+                
+                    for nombre in seleccionados:
+                        codigo = st.session_state.ciclos_disponibles[nombre]
+                
+                        tareas.append(
+                            executor.submit(
+                                descargar_archivo,
+                                st.session_state.session,
+                                codigo,
+                                periodo,
+                                nombre
+                            )
+                        )
+                
+                    for future in as_completed(tareas):
+                
+                        contenido, filename = future.result()
+                
+                        if contenido:
+                            st.session_state.archivos_descargados[filename] = contenido
 
                 if not st.session_state.archivos_descargados:
                     st.markdown(
