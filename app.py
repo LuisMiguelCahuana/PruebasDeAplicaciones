@@ -8,8 +8,6 @@ from io import BytesIO
 import re
 import zipfile
 import io
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Border, Alignment
 from openpyxl.utils.dataframe import dataframe_to_rows
@@ -88,11 +86,7 @@ def download_excel_from_drive(file_id):
 def descargar_archivo(session, codigo, periodo, nombre_ciclo=None):
     zona = ZoneInfo("America/Lima")
     hoy = datetime.now(zona).strftime("%Y-%m-%d")
-    url = (
-        "http://sigof.distriluz.com.pe/plus/"
-        f"ComrepOrdenrepartos/ajax_reporte_excel_ordenes_historico/"
-        f"U/{periodo}/{codigo}/0/0/{hoy}/{hoy}/0/"
-    )
+    url = (f"http://sigof.distriluz.com.pe/plus/Reportes/ajax_ordenes_historico_xls/U/{hoy}/{hoy}/0/{codigo}/0/0/0/0/0/0/0/0/9/{periodo}")
     response = session.get(url, headers=headers)
 
     if response.headers.get("Content-Type") == \
@@ -102,12 +96,12 @@ def descargar_archivo(session, codigo, periodo, nombre_ciclo=None):
         return None, None
 
 def main():
-    st.set_page_config(page_title="Lmc Reparto", layout="wide")
+    st.set_page_config(page_title="Lmc Lectura", layout="wide")
 
     st.markdown("""
     <style>
     .stApp {
-        background-image: url("https://i.ibb.co/ynvRSDZL/fondo-Reparto.jpg");
+        background-image: url("https://i.ibb.co/CpVsF4Km/Lecturador.png");
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
@@ -161,8 +155,8 @@ def main():
 
     st.markdown("""
     <div style="display: flex; justify-content: center;">
-        <h3 style="color:#05DF72;">
-            🤖 Control de Avance Reparto de Recibos
+        <h3 style="color:#0078D7;">
+            🤖 Control de Avance de Lecturas y Relecturas
         </h3>
     </div>
     """, unsafe_allow_html=True)
@@ -238,8 +232,7 @@ def main():
 
                 st.session_state.defecto_iduunn = nuevo
                 st.session_state.unidad_actual = nuevo
-                st.success(f"Humano unidad cambiada a {unidad}")
-                time.sleep(2)
+                st.success(f"Unidad cambiada a {unidad}")
                 st.rerun()
 
     # ===== DESCARGA DE CICLOS =====
@@ -254,7 +247,7 @@ def main():
                                     value=PERIODO_PERMITIDO,
                                     disabled=True)
 
-        if st.button("📥 Humano Mostrar el % Avance"):
+        if st.button("📥 Humano Mostrar el % Avance y RL"):
             st.session_state.mostrar_resumen = True
 
             if not seleccionados:
@@ -262,35 +255,19 @@ def main():
             else:
                 st.session_state.archivos_descargados.clear()
 
-                with ThreadPoolExecutor(max_workers=6) as executor:
-
-                    tareas = []
-                
-                    for nombre in seleccionados:
-                        codigo = st.session_state.ciclos_disponibles[nombre]
-                
-                        tareas.append(
-                            executor.submit(
-                                descargar_archivo,
-                                st.session_state.session,
-                                codigo,
-                                periodo,
-                                nombre
-                            )
-                        )
-                
-                    for future in as_completed(tareas):
-                
-                        contenido, filename = future.result()
-                
-                        if contenido:
-                            st.session_state.archivos_descargados[filename] = contenido
+                for nombre in seleccionados:
+                    codigo = st.session_state.ciclos_disponibles[nombre]
+                    contenido, filename = descargar_archivo(
+                        st.session_state.session, codigo, periodo, nombre
+                    )
+                    if contenido:
+                        st.session_state.archivos_descargados[filename] = contenido
 
                 if not st.session_state.archivos_descargados:
                     st.markdown(
                         "<p style='color:red; font-weight:bold; font-size:16px;'>"
                         "Humano, la información ya no está disponible en SIGOF WEB "
-                        "debido a que el periodo de reparto ha finalizado. "
+                        "debido a que el periodo de lectura ha finalizado. "
                         "Por favor, espere el siguiente periodo."
                         "</p>",
                         unsafe_allow_html=True
@@ -300,23 +277,24 @@ def main():
         # ===== RESUMEN =====
         if st.session_state.archivos_descargados and st.session_state.mostrar_resumen:
             st.markdown(
-                "<p style='font-size:20px; color:#00E0E0;'>👷 RESUMEN POR REPARTIDOR</p>",
+                "<p style='font-size:20px; color:#00E0E0;'>👷 RESUMEN POR LECTURADOR</p>",
                 unsafe_allow_html=True
             )
 
             resumen_total = []
+            st.session_state.detalle_relecturas_global = pd.DataFrame()
 
             for filename, contenido in st.session_state.archivos_descargados.items():
                 df_excel = pd.read_excel(BytesIO(contenido))
 
-                if {"lecturista", "resultado_evaluacion"}.issubset(df_excel.columns):
+                if {"lecturista", "resultado"}.issubset(df_excel.columns):
 
                     resumen = (
                         df_excel
                         .groupby("lecturista")
                         .agg(
                             Asignados=("lecturista", "size"),
-                            Avance=("resultado_evaluacion", lambda x: x.notna().sum())
+                            Avance=("resultado", lambda x: x.notna().sum())
                         )
                         .reset_index()
                     )
@@ -334,10 +312,59 @@ def main():
 
                     resumen["Descargados_temp"] = (
                         df_excel
-                        .groupby("lecturista")["resultado_evaluacion"]
+                        .groupby("lecturista")["resultado"]
                         .apply(lambda x: x.notna().sum())
                         .values
                     )
+
+                    # ==== RELECTURAS (CORREGIDO) ====
+                    if {"tipo_lectura", "resultado"}.issubset(df_excel.columns):
+                    
+                        df_temp = df_excel.copy()
+
+                        # Guardar detalle de relecturas
+                        df_temp["es_relectura"] = (
+                            (df_temp["tipo_lectura"].astype(str).str.upper().str.strip() == "R") &
+                            (
+                                df_temp["resultado"].isna() |
+                                (df_temp["resultado"].astype(str).str.strip() == "")
+                            )
+                        )
+                        
+                        detalle_relecturas = df_temp[df_temp["es_relectura"] == True].copy()
+                        
+                        # Guardar global
+                        if "detalle_relecturas_global" not in st.session_state:
+                            st.session_state.detalle_relecturas_global = pd.DataFrame()
+                        
+                        st.session_state.detalle_relecturas_global = pd.concat(
+                            [st.session_state.detalle_relecturas_global, detalle_relecturas],
+                            ignore_index=True
+                        )
+
+                    
+                        df_temp["es_relectura"] = (
+                            (df_temp["tipo_lectura"].astype(str).str.upper().str.strip() == "R") &
+                            (
+                                df_temp["resultado"].isna() |
+                                (df_temp["resultado"].astype(str).str.strip() == "")
+                            )
+                        )
+                    
+                        relecturas = (
+                            df_temp
+                            .groupby("lecturista")["es_relectura"]
+                            .sum()
+                            .reset_index()
+                        )
+                    
+                        resumen = resumen.merge(relecturas, on="lecturista", how="left")
+                        resumen["RL"] = resumen["es_relectura"].fillna(0).astype(int)
+                        resumen.drop(columns=["es_relectura"], inplace=True)
+                    
+                    else:
+                        resumen["RL"] = 0
+        #==========================================================================
 
                     resumen["Descargados / Finalizados"] = resumen["Descargados_temp"].apply(
                         lambda x: f"{x}" if x > 0 else "0 descargas o no inicia"
@@ -376,19 +403,25 @@ def main():
                 df_final = pd.concat(resumen_total, ignore_index=True)
 
                 df_final = df_final.rename(columns={
-                    "lecturista": "Repartidor",
+                    "lecturista": "Lecturador",
                     "Asignados": "Asig",
                     "Descargados / Finalizados": "Des/Fin",
                     "Pendientes": "Pend",
                     "% de Avance": "% de Avance",
                     "% de Fotos": "% de Fotos",
-                    "Ciclo": "Ciclo Reparto"
+                    "Ciclo": "Ciclo Lectura"
                 })
                 # Forzar alineación a la derecha convirtiendo Des/Fin en número cuando sea posible
                 #df_final["Des/Fin"] = pd.to_numeric(df_final["Des/Fin"], errors="coerce").fillna(df_final["Des/Fin"])
                 df_final["Des/Fin"] = df_final["Des/Fin"].apply(
                     lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace(".", "").isdigit() else x
                 )
+
+                # Ocultar columna RL en el resumen (pero mantenerla para el detalle)
+                if "RL" in df_final.columns:
+                    df_final_sin_rl = df_final.drop(columns=["RL"])
+                else:
+                    df_final_sin_rl = df_final.copy()
 
                 def color_avance(val):
                     if val < 59:
@@ -399,12 +432,47 @@ def main():
                         return "color: green; font-weight: bold;"
 
                 df_styled = (
-                    df_final.style
+                    df_final_sin_rl.style
                     .format({"% de Avance": "{:.2f}%", "% de Fotos": "{:.2f}%"})
                     .applymap(color_avance, subset=["% de Avance"])
                 )
 
                 st.dataframe(df_styled, use_container_width=True)
+
+                # ===============================
+                # DETALLE DE RELECTURAS
+                # ===============================
+                #st.markdown("### 🔎 Ver detalle de Relecturas")
+                if st.session_state.archivos_descargados and st.session_state.mostrar_resumen:
+                    st.markdown(
+                        "<p style='font-size:20px; color:#00E0E0;'>👷 Lecturistas con Relecturas</p>",
+                        unsafe_allow_html=True
+                    )
+                
+                if "detalle_relecturas_global" in st.session_state:
+                
+                    detalle = st.session_state.detalle_relecturas_global.copy()
+                
+                    if not detalle.empty:
+                
+                        # Crear columna RL
+                        detalle["RL"] = "R"
+                
+                        columnas_mostrar = [
+                            col for col in 
+                            ["ciclo", "sector", "ruta", "RL", "suministro", "lecturista", "cliente", "direccion"]
+                            if col in detalle.columns
+                        ]
+                
+                        st.info(f"Total suministros con relecturas: {len(detalle)}")
+                
+                        st.dataframe(
+                            detalle[columnas_mostrar],
+                            use_container_width=True
+                        )
+                    else:
+                        st.info("Humano no tiene suministros con relecturas en los ciclos seleccionados.")
+                
 
                 # ===== EXPORTACIÓN =====
                 buffer_excel = BytesIO()
@@ -415,7 +483,7 @@ def main():
     
                     from openpyxl.styles import PatternFill, Font, Border, Alignment
     
-                    header_fill = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
+                    header_fill = PatternFill(start_color="00B0F0", end_color="00B0F0", fill_type="solid")
                     header_font = Font(color="FFFFFF", bold=True)
                     no_border = Border()
     
@@ -462,7 +530,7 @@ def main():
                 st.download_button(
                     "📊 Humano Exportar Excel",
                     data=buffer_excel,
-                    file_name="Lmc_Resumen_por_Repartidor👷.xlsx",
+                    file_name="Lmc_Resumen_por_Lecturador👷.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
     # ===== CERRAR SESIÓN =====
