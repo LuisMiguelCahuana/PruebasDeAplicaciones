@@ -18,8 +18,20 @@ headers = {
     "User-Agent": "Mozilla/5.0",
     "Referer": login_url
 }
-# ==========================================
 
+CAMBIAR_UNIDAD_URL = "http://sigof.distriluz.com.pe/plus/usuario/ajax_cambiar_sesion"
+
+UNIDADES = {
+    "Ayacucho": 76,
+    "Huancayo": 77,
+    "Huancavelica": 78,
+    "Tarma": 79,
+    "Selva Central": 80,
+    "Pasco": 81,
+    "Huánuco": 82,
+    "Valle Mantaro": 83,
+    "Tingo María": 84
+}
 
 def login_and_get_defecto_iduunn(session, usuario, password):
     credentials = {
@@ -51,6 +63,22 @@ def login_and_get_defecto_iduunn(session, usuario, password):
         return None, False
 
     return defecto_iduunn, True
+    # ================= CAMBIAR UNIDAD =================
+    def cambiar_unidad_sigof(session, iduunn):
+    
+        payload = {
+            "idempresa": 4,
+            "iduunn": iduunn
+        }
+    
+        session.post(CAMBIAR_UNIDAD_URL, data=payload, headers=headers)
+    
+        test = session.get(
+            "http://sigof.distriluz.com.pe/plus/dashboard/modulos",
+            headers=headers
+        )
+    
+        return str(iduunn) in test.text
 
 
 @st.cache_data(ttl=600)
@@ -177,7 +205,41 @@ def run():
 
                     st.session_state.ciclos_disponibles = ciclos_dict
                     st.rerun()
-
+    # ================= CAMBIO DE UNIDAD =================
+    if st.session_state.session is not None:    
+        nombre_actual = {v: k for k, v in UNIDADES.items()}.get(
+            st.session_state.defecto_iduunn, "Ayacucho"
+        )    
+        unidad = st.selectbox(
+            "🏢 Unidad Operativa",
+            list(UNIDADES.keys()),
+            index=list(UNIDADES.keys()).index(nombre_actual)
+        )    
+        if st.button("🔄 Cambiar Unidad"):    
+            nueva = UNIDADES[unidad]    
+            if nueva != st.session_state.defecto_iduunn:    
+                ok = cambiar_unidad_sigof(st.session_state.session, nueva)    
+                if not ok:
+                    st.error("❌ SIGOF rechazó el cambio de unidad")
+                    st.stop()    
+                st.session_state.defecto_iduunn = nueva    
+                df_ciclos = download_excel_from_drive(FILE_ID)    
+                df_ciclos['id_unidad'] = (
+                    pd.to_numeric(df_ciclos['id_unidad'], errors='coerce')
+                    .fillna(-1)
+                    .astype(int)
+                )    
+                df_ciclos = df_ciclos[
+                    df_ciclos['id_unidad'] == nueva
+                ]    
+                ciclos_dict = {
+                    f"{r['Id_ciclo']} {r['nombre_ciclo']}": str(r['Id_ciclo'])
+                    for _, r in df_ciclos.iterrows()
+                }    
+                st.session_state.ciclos_disponibles = ciclos_dict    
+                st.success(f"Humano unidad cambiada a {unidad}")    
+                time.sleep(2)    
+                st.rerun()
     # ================= DESCARGA =================
     if st.session_state.ciclos_disponibles:
 
