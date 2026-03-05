@@ -262,7 +262,7 @@ def run():
                 )
             else:
                 seleccionados = st.multiselect(
-                    "Seleccione ciclos",
+                    "",
                     options=opciones
                 )
 
