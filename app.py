@@ -251,7 +251,7 @@ def run():
             "Humano con esta opción puedes seleccionar todos los ciclos"
         )
 
-        col1, col2 = st.columns([3, 0.5])
+        col1, col2 = st.columns([3, 0.4])
 
         with col1:
             if seleccionar_todos:
