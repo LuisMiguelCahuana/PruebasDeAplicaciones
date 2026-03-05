@@ -256,7 +256,7 @@ def run():
         with col1:
             if seleccionar_todos:
                 seleccionados = st.multiselect(
-                    "Seleccione ciclos",
+                    "",
                     options=opciones,
                     default=opciones
                 )
