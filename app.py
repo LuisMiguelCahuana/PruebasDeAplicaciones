@@ -337,7 +337,8 @@ def run():
             df_actual["suministro"] = df_actual["suministro"].astype("string")
             df_anterior["suministro"] = df_anterior["suministro"].astype("string")
 
-            df_anterior_small = df_anterior[["suministro", "lectura"]]
+            #df_anterior_small = df_anterior[["suministro", "lectura"]]
+            df_anterior_small = df_anterior[["suministro", "lectura", "lecturista"]]
 
             df_comparacion = pd.merge(
                 df_actual,
@@ -365,7 +366,8 @@ def run():
                 "Mes Refacturado": df_refacturados["pfactura"],
                 "Suministro": df_refacturados["suministro"],
                 "Medidor": df_refacturados["medidor"],
-                "Lecturista": df_refacturados["lecturista"],
+                #"Lecturista": df_refacturados["lecturista"],
+                "Lecturista": df_refacturados["lecturista_ant"],
                 "Ciclo": df_refacturados["ciclo"],
                 "Sector": df_refacturados["sector"],
                 "Ruta": df_refacturados["ruta"],
