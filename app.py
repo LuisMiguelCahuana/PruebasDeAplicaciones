@@ -135,7 +135,7 @@ def run():
     st.markdown("""
         <div style="display: flex; justify-content: center; align-items: center; width: 100%;">
             <h1 style="font-size: clamp(18px, 5vw, 35px); text-align: center; color: #0078D7;">
-                🤖 REPORTE DE SUMINISTROS REFACTURADOS v2 (999999)
+                🤖 REPORTE DE SUMINISTROS REFACTURADOS v3 (999999)
             </h1>
         </div>
     """, unsafe_allow_html=True)
