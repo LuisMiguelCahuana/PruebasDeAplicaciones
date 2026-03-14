@@ -367,7 +367,7 @@ def run():
                 "Suministro": df_refacturados["suministro"],
                 "Medidor": df_refacturados["medidor"],
                 #"Lecturista": df_refacturados["lecturista"],
-                "Lecturista": df_refacturados["lecturista_ant"],
+                "Lecturista": df_refacturados["lecturista"],
                 "Ciclo": df_refacturados["ciclo"],
                 "Sector": df_refacturados["sector"],
                 "Ruta": df_refacturados["ruta"],
